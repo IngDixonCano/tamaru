@@ -1,0 +1,274 @@
+// Tamaru — Schema de base de datos
+// Sistema de cotización e inventario para manillas artesanales
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================== ENUMS ====================
+
+enum CategoriaMaterial {
+  DIJE
+  BALIN
+  HILO
+  PIEDRA
+  TIRA
+  MOSTACILLA
+  ARGOLLA
+  SEPARADOR
+  BORLA
+  CAJA
+  NEOPRENO
+  RONDEL
+  LETRA
+  ARANDELA
+  OTRO
+}
+
+enum MaterialBase {
+  PLATA
+  RODIO
+  COBRE
+  ACERO
+  ORO_LAMINADO
+  NEOPRENO
+  VIDRIO
+  OBSIDIANA
+  MADERA
+  HILO_CHINO
+  HILO_VIBORA
+  OTRO
+}
+
+enum UnidadMedida {
+  UNIDAD
+  METRO
+  GRAMO
+  TIRA
+  DOCENA
+  ROLLO
+}
+
+enum CanalCliente {
+  MARKETPLACE
+  DIRECTO
+  REFERIDO
+  OTRO
+}
+
+enum EstadoCotizacion {
+  BORRADOR
+  ENVIADA
+  APROBADA
+  VENDIDA
+  PENDIENTE_STOCK
+  CANCELADA
+}
+
+enum TipoMovimiento {
+  ENTRADA
+  SALIDA
+  AJUSTE
+}
+
+enum EstadoPago {
+  PENDIENTE
+  ABONO
+  PAGADA
+}
+
+enum RolUsuario {
+  ADMIN
+}
+
+// ==================== MODELOS ====================
+
+model Proveedor {
+  id        String   @id @default(cuid())
+  nombre    String
+  contacto  String?
+  notas     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  compraLotes CompraLote[]
+
+  @@map("proveedores")
+}
+
+model Material {
+  id           String            @id @default(cuid())
+  nombre       String
+  categoria    CategoriaMaterial
+  materialBase MaterialBase
+  color        String?
+  tamano       String?
+  unidadMedida UnidadMedida
+  stockActual  Decimal           @default(0) @db.Decimal(10, 2)
+  stockMinimo  Decimal           @default(0) @db.Decimal(10, 2)
+  disponible   Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  compraLotes          CompraLote[]
+  movimientos          MovimientoInventario[]
+  cotizacionMateriales CotizacionMaterial[]
+
+  @@index([categoria])
+  @@index([materialBase])
+  @@index([disponible])
+  @@map("materiales")
+}
+
+model CompraLote {
+  id                 String   @id @default(cuid())
+  materialId         String
+  proveedorId        String
+  cantidadInicial    Decimal  @db.Decimal(10, 2)
+  cantidadDisponible Decimal  @db.Decimal(10, 2)
+  costoUnitario      Decimal  @db.Decimal(12, 2)
+  costoTotal         Decimal  @db.Decimal(12, 2)
+  fecha              DateTime
+  createdAt          DateTime @default(now())
+
+  material    Material  @relation(fields: [materialId], references: [id])
+  proveedor   Proveedor @relation(fields: [proveedorId], references: [id])
+  movimientos MovimientoInventario[]
+
+  @@index([materialId])
+  @@index([proveedorId])
+  @@map("compra_lotes")
+}
+
+model MovimientoInventario {
+  id           String         @id @default(cuid())
+  materialId   String
+  tipo         TipoMovimiento
+  cantidad     Decimal        @db.Decimal(10, 2)
+  motivo       String
+  ventaId      String?
+  compraLoteId String?
+  fecha        DateTime       @default(now())
+  createdAt    DateTime       @default(now())
+
+  material   Material    @relation(fields: [materialId], references: [id])
+  venta      Venta?      @relation(fields: [ventaId], references: [id])
+  compraLote CompraLote? @relation(fields: [compraLoteId], references: [id])
+
+  @@index([materialId])
+  @@index([ventaId])
+  @@index([fecha])
+  @@map("movimientos_inventario")
+}
+
+model Cliente {
+  id        String       @id @default(cuid())
+  nombre    String
+  telefono  String
+  email     String?
+  canal     CanalCliente
+  notas     String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  cotizaciones Cotizacion[]
+
+  @@map("clientes")
+}
+
+model Cotizacion {
+  id                 String            @id @default(cuid())
+  clienteId          String
+  nombreDiseno       String
+  estado             EstadoCotizacion  @default(BORRADOR)
+  precioVenta        Decimal?          @db.Decimal(12, 2)
+  costoMateriales    Decimal?          @db.Decimal(12, 2)
+  manoDeObra         Decimal?          @db.Decimal(12, 2)
+  manoDeObraSugerida Decimal?          @db.Decimal(12, 2)
+  gananciaEstimada   Decimal?          @db.Decimal(12, 2)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  cliente    Cliente              @relation(fields: [clienteId], references: [id])
+  materiales CotizacionMaterial[]
+  venta      Venta?
+
+  @@index([clienteId])
+  @@index([estado])
+  @@map("cotizaciones")
+}
+
+model CotizacionMaterial {
+  id                 String  @id @default(cuid())
+  cotizacionId       String
+  materialId         String
+  cantidadRequerida  Decimal @db.Decimal(10, 2)
+  costoUnitAlMomento Decimal @db.Decimal(12, 2)
+
+  cotizacion Cotizacion @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+  material   Material   @relation(fields: [materialId], references: [id])
+
+  @@unique([cotizacionId, materialId])
+  @@map("cotizacion_materiales")
+}
+
+model Venta {
+  id           String     @id @default(cuid())
+  cotizacionId String     @unique
+  montoFinal   Decimal    @db.Decimal(12, 2)
+  estadoPago   EstadoPago @default(PENDIENTE)
+  fechaVenta   DateTime   @default(now())
+  createdAt    DateTime   @default(now())
+
+  cotizacion  Cotizacion             @relation(fields: [cotizacionId], references: [id])
+  pagos       Pago[]
+  movimientos MovimientoInventario[]
+  imagenes    ImagenReferencia[]
+
+  @@index([estadoPago])
+  @@index([fechaVenta])
+  @@map("ventas")
+}
+
+model Pago {
+  id        String   @id @default(cuid())
+  ventaId   String
+  monto     Decimal  @db.Decimal(12, 2)
+  fecha     DateTime @default(now())
+  metodo    String
+  createdAt DateTime @default(now())
+
+  venta Venta @relation(fields: [ventaId], references: [id])
+
+  @@index([ventaId])
+  @@map("pagos")
+}
+
+model ImagenReferencia {
+  id          String   @id @default(cuid())
+  ventaId     String?
+  url         String
+  descripcion String?
+  createdAt   DateTime @default(now())
+
+  venta Venta? @relation(fields: [ventaId], references: [id])
+
+  @@map("imagenes_referencia")
+}
+
+model Usuario {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  nombre       String
+  rol          RolUsuario @default(ADMIN)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@map("usuarios")
+}
